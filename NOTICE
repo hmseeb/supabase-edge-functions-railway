@@ -1,0 +1,8 @@
+Supabase + Edge Functions Railway adapter
+
+This product includes files derived from the Supabase repository at
+https://github.com/supabase/supabase, tag self-hosted/v0.8.0, commit
+241bb11c0627f2981746d37033f57dbfa81d29b0.
+
+Supabase source files are Copyright Supabase, Inc. and contributors and are
+used under the Apache License, Version 2.0.

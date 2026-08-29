@@ -1,0 +1,331 @@
+{
+  "$schema": "internal build sheet, not a Railway file",
+  "name": "Supabase + Edge Functions",
+  "upstream": {
+    "repo": "https://github.com/supabase/supabase",
+    "tag": "self-hosted/v0.8.0",
+    "commit": "241bb11c0627f2981746d37033f57dbfa81d29b0",
+    "released": "2026-08-11",
+    "license": "Apache-2.0",
+    "$note": "The stable self-hosted snapshot pins all 11 service images as a tested set. UPSTREAM_VERSION and test/upstream.sha256 make every vendored file auditable."
+  },
+  "adapter": {
+    "repo": "https://github.com/hmseeb/supabase-edge-functions-railway",
+    "tag": "v0.8.0-r1",
+    "$note": "Six thin owned images package files that Docker Compose bind-mounts but Railway image services cannot. Auth, REST, Realtime, imgproxy, and postgres-meta stay on the exact upstream images.",
+    "images": {
+      "db": "ghcr.io/hmseeb/supabase-railway-db:v0.8.0-r1",
+      "gateway": "ghcr.io/hmseeb/supabase-railway-gateway:v0.8.0-r1",
+      "functions": "ghcr.io/hmseeb/supabase-railway-functions:v0.8.0-r1",
+      "pooler": "ghcr.io/hmseeb/supabase-railway-pooler:v0.8.0-r1",
+      "storage": "ghcr.io/hmseeb/supabase-railway-storage:v0.8.0-r1",
+      "studio": "ghcr.io/hmseeb/supabase-railway-studio:v0.8.0-r1"
+    }
+  },
+  "topology": {
+    "$note": "The official 11-service stack is retained, excluding only the optional Logflare and Vector override. Vector needs a Docker socket, which Railway does not expose. Railway logs replace the optional Log Explorer.",
+    "$storage": "Storage uses a bundled Railway S3 bucket so Storage and imgproxy do not need a shared local volume. References use the bucket name, never its UUID.",
+    "$functions": "The same pinned Functions tree is baked into Studio and Edge Runtime. Updating a function requires changing the adapter repository and redeploying both images because Railway cannot share a writable Functions volume.",
+    "$public_edge": "Only gateway receives an HTTP domain. Studio is protected by generated HTTP Basic Auth on that same origin, and all API paths route through Envoy.",
+    "$secrets": "JWT_SECRET is generated once on db. Gateway, Storage, Studio, and Edge Runtime independently derive byte-identical legacy anon and service-role JWTs from fixed claims."
+  },
+  "bucket": {
+    "name": "supabase-storage",
+    "$note": "All references must remain name-based: ${{supabase-storage.BUCKET}}, ${{supabase-storage.ACCESS_KEY_ID}}, ${{supabase-storage.SECRET_ACCESS_KEY}}, ${{supabase-storage.ENDPOINT}}, and ${{supabase-storage.REGION}}."
+  },
+  "services": {
+    "db": {
+      "image": "ghcr.io/hmseeb/supabase-railway-db:v0.8.0-r1",
+      "variables": {
+        "PGDATA": "/var/lib/postgresql/data/pgdata",
+        "PGPORT": "5432",
+        "PGDATABASE": "postgres",
+        "PGPASSWORD": "${{db.POSTGRES_PASSWORD}}",
+        "POSTGRES_DB": "postgres",
+        "POSTGRES_HOST": "/var/run/postgresql",
+        "POSTGRES_PORT": "5432",
+        "POSTGRES_USER": "supabase_admin",
+        "POSTGRES_PASSWORD": "${{secret(48, \"0123456789abcdef\")}}",
+        "JWT_SECRET": "${{secret(64, \"0123456789abcdef\")}}",
+        "JWT_EXP": "3600",
+        "ANON_KEY": "",
+        "SERVICE_ROLE_KEY": "",
+        "SECRET_KEY_BASE": "${{secret(64, \"0123456789abcdef\")}}",
+        "REALTIME_DB_ENC_KEY": "${{secret(16, \"0123456789abcdef\")}}",
+        "VAULT_ENC_KEY": "${{secret(32, \"0123456789abcdef\")}}",
+        "PG_META_CRYPTO_KEY": "${{secret(32, \"0123456789abcdef\")}}",
+        "S3_PROTOCOL_ACCESS_KEY_ID": "${{secret(32, \"0123456789abcdef\")}}",
+        "S3_PROTOCOL_ACCESS_KEY_SECRET": "${{secret(64, \"0123456789abcdef\")}}",
+        "RAILWAY_RUN_UID": "0",
+        "RAILWAY_DEPLOYMENT_DRAINING_SECONDS": "60"
+      },
+      "volume": {
+        "mountPath": "/var/lib/postgresql/data"
+      },
+      "tcpProxyPort": 5432,
+      "restartPolicy": "ALWAYS",
+      "$note": "The wrapper removes lost+found, initializes PGDATA in a subdirectory, bakes the seven official SQL files, and persists /etc/postgresql-custom inside the one attached volume. Empty ANON_KEY and SERVICE_ROLE_KEY are optional migration overrides; wrappers derive both when blank."
+    },
+    "gateway": {
+      "image": "ghcr.io/hmseeb/supabase-railway-gateway:v0.8.0-r1",
+      "variables": {
+        "PORT": "8000",
+        "JWT_SECRET": "${{db.JWT_SECRET}}",
+        "ANON_KEY": "${{db.ANON_KEY}}",
+        "SERVICE_ROLE_KEY": "${{db.SERVICE_ROLE_KEY}}",
+        "ANON_KEY_ASYMMETRIC": "",
+        "SERVICE_ROLE_KEY_ASYMMETRIC": "",
+        "SUPABASE_PUBLISHABLE_KEY": "",
+        "SUPABASE_SECRET_KEY": "",
+        "SUPABASE_PUBLIC_URL": "https://${{gateway.RAILWAY_PUBLIC_DOMAIN}}",
+        "DASHBOARD_USERNAME": "supabase",
+        "DASHBOARD_PASSWORD": "${{secret(32)}}"
+      },
+      "domain": {
+        "targetPortOnSource": 8000
+      },
+      "healthcheckPath": "/healthz",
+      "restartPolicy": "ALWAYS",
+      "$note": "Envoy differs from upstream only by Railway private DNS hostnames and an unauthenticated direct-response /healthz route. Studio remains Basic Auth protected. The live source project needs one redeploy after its domain is created; template deploys create the domain before first boot."
+    },
+    "auth": {
+      "image": "supabase/gotrue:v2.189.0",
+      "variables": {
+        "PORT": "9999",
+        "GOTRUE_API_HOST": "0.0.0.0",
+        "GOTRUE_API_PORT": "9999",
+        "API_EXTERNAL_URL": "https://${{gateway.RAILWAY_PUBLIC_DOMAIN}}/auth/v1",
+        "GOTRUE_DB_DRIVER": "postgres",
+        "GOTRUE_DB_DATABASE_URL": "postgres://supabase_auth_admin:${{db.POSTGRES_PASSWORD}}@${{db.RAILWAY_PRIVATE_DOMAIN}}:5432/postgres",
+        "GOTRUE_SITE_URL": "https://${{gateway.RAILWAY_PUBLIC_DOMAIN}}",
+        "GOTRUE_URI_ALLOW_LIST": "",
+        "GOTRUE_DISABLE_SIGNUP": "false",
+        "GOTRUE_JWT_ADMIN_ROLES": "service_role",
+        "GOTRUE_JWT_AUD": "authenticated",
+        "GOTRUE_JWT_DEFAULT_GROUP_NAME": "authenticated",
+        "GOTRUE_JWT_EXP": "3600",
+        "GOTRUE_JWT_SECRET": "${{db.JWT_SECRET}}",
+        "GOTRUE_JWT_ISSUER": "https://${{gateway.RAILWAY_PUBLIC_DOMAIN}}/auth/v1",
+        "GOTRUE_EXTERNAL_EMAIL_ENABLED": "true",
+        "GOTRUE_EXTERNAL_ANONYMOUS_USERS_ENABLED": "false",
+        "GOTRUE_MAILER_AUTOCONFIRM": "true",
+        "GOTRUE_SMTP_ADMIN_EMAIL": "admin@example.com",
+        "GOTRUE_SMTP_HOST": "",
+        "GOTRUE_SMTP_PORT": "587",
+        "GOTRUE_SMTP_USER": "",
+        "GOTRUE_SMTP_PASS": "",
+        "GOTRUE_SMTP_SENDER_NAME": "Supabase",
+        "GOTRUE_MAILER_URLPATHS_INVITE": "/auth/v1/verify",
+        "GOTRUE_MAILER_URLPATHS_CONFIRMATION": "/auth/v1/verify",
+        "GOTRUE_MAILER_URLPATHS_RECOVERY": "/auth/v1/verify",
+        "GOTRUE_MAILER_URLPATHS_EMAIL_CHANGE": "/auth/v1/verify",
+        "GOTRUE_EXTERNAL_PHONE_ENABLED": "false",
+        "GOTRUE_SMS_AUTOCONFIRM": "false"
+      },
+      "healthcheckPath": "/health",
+      "restartPolicy": "ALWAYS",
+      "$note": "Email auto-confirm is on so a fresh deploy has a complete signup journey without a fake SMTP server. The listing tells production deployers to configure SMTP and turn auto-confirm off."
+    },
+    "rest": {
+      "image": "postgrest/postgrest:v14.12",
+      "startCommand": "postgrest",
+      "variables": {
+        "PORT": "3000",
+        "PGRST_SERVER_PORT": "3000",
+        "PGRST_DB_URI": "postgres://authenticator:${{db.POSTGRES_PASSWORD}}@${{db.RAILWAY_PRIVATE_DOMAIN}}:5432/postgres",
+        "PGRST_DB_SCHEMAS": "public,graphql_public",
+        "PGRST_DB_MAX_ROWS": "1000",
+        "PGRST_DB_EXTRA_SEARCH_PATH": "public",
+        "PGRST_DB_ANON_ROLE": "anon",
+        "PGRST_ADMIN_SERVER_PORT": "3001",
+        "PGRST_ADMIN_SERVER_HOST": "localhost",
+        "PGRST_JWT_SECRET": "${{db.JWT_SECRET}}",
+        "PGRST_DB_USE_LEGACY_GUCS": "false",
+        "PGRST_APP_SETTINGS_JWT_SECRET": "${{db.JWT_SECRET}}",
+        "PGRST_APP_SETTINGS_JWT_EXP": "3600"
+      },
+      "healthcheckPath": "/",
+      "restartPolicy": "ALWAYS"
+    },
+    "realtime-dev": {
+      "image": "supabase/realtime:v2.102.3",
+      "variables": {
+        "PORT": "4000",
+        "DB_HOST": "${{db.RAILWAY_PRIVATE_DOMAIN}}",
+        "DB_PORT": "5432",
+        "DB_USER": "supabase_admin",
+        "DB_PASSWORD": "${{db.POSTGRES_PASSWORD}}",
+        "DB_NAME": "postgres",
+        "DB_AFTER_CONNECT_QUERY": "SET search_path TO _realtime",
+        "DB_ENC_KEY": "${{db.REALTIME_DB_ENC_KEY}}",
+        "API_JWT_SECRET": "${{db.JWT_SECRET}}",
+        "SECRET_KEY_BASE": "${{db.SECRET_KEY_BASE}}",
+        "METRICS_JWT_SECRET": "${{db.JWT_SECRET}}",
+        "ERL_AFLAGS": "-proto_dist inet_tcp",
+        "DNS_NODES": "''",
+        "RLIMIT_NOFILE": "10000",
+        "APP_NAME": "realtime",
+        "SEED_SELF_HOST": "true",
+        "RUN_JANITOR": "true",
+        "DISABLE_HEALTHCHECK_LOGGING": "true"
+      },
+      "restartPolicy": "ALWAYS",
+      "$note": "The service name must remain realtime-dev. The upstream tenant is seeded with that identifier and Realtime routing depends on it."
+    },
+    "storage": {
+      "image": "ghcr.io/hmseeb/supabase-railway-storage:v0.8.0-r1",
+      "variables": {
+        "PORT": "5000",
+        "SERVER_PORT": "5000",
+        "SERVER_HOST": "::",
+        "JWT_SECRET": "${{db.JWT_SECRET}}",
+        "ANON_KEY": "${{db.ANON_KEY}}",
+        "SERVICE_KEY": "${{db.SERVICE_ROLE_KEY}}",
+        "AUTH_JWT_SECRET": "${{db.JWT_SECRET}}",
+        "DATABASE_URL": "postgres://supabase_storage_admin:${{db.POSTGRES_PASSWORD}}@${{db.RAILWAY_PRIVATE_DOMAIN}}:5432/postgres",
+        "POSTGREST_URL": "http://${{rest.RAILWAY_PRIVATE_DOMAIN}}:3000",
+        "STORAGE_PUBLIC_URL": "https://${{gateway.RAILWAY_PUBLIC_DOMAIN}}",
+        "REQUEST_ALLOW_X_FORWARDED_PATH": "true",
+        "FILE_SIZE_LIMIT": "52428800",
+        "STORAGE_BACKEND": "s3",
+        "GLOBAL_S3_BUCKET": "${{supabase-storage.BUCKET}}",
+        "GLOBAL_S3_ENDPOINT": "${{supabase-storage.ENDPOINT}}",
+        "GLOBAL_S3_PROTOCOL": "https",
+        "GLOBAL_S3_FORCE_PATH_STYLE": "true",
+        "AWS_ACCESS_KEY_ID": "${{supabase-storage.ACCESS_KEY_ID}}",
+        "AWS_SECRET_ACCESS_KEY": "${{supabase-storage.SECRET_ACCESS_KEY}}",
+        "TENANT_ID": "railway",
+        "REGION": "${{supabase-storage.REGION}}",
+        "ENABLE_IMAGE_TRANSFORMATION": "true",
+        "IMGPROXY_URL": "http://${{imgproxy.RAILWAY_PRIVATE_DOMAIN}}:5001",
+        "S3_PROTOCOL_ACCESS_KEY_ID": "${{db.S3_PROTOCOL_ACCESS_KEY_ID}}",
+        "S3_PROTOCOL_ACCESS_KEY_SECRET": "${{db.S3_PROTOCOL_ACCESS_KEY_SECRET}}"
+      },
+      "healthcheckPath": "/status",
+      "restartPolicy": "ALWAYS",
+      "$note": "The wrapper derives ANON_KEY and SERVICE_KEY when the db overrides are blank. Bucket references are name-based and survive fresh template deploys."
+    },
+    "imgproxy": {
+      "image": "darthsim/imgproxy:v3.30.1",
+      "variables": {
+        "PORT": "5001",
+        "IMGPROXY_BIND": ":5001",
+        "IMGPROXY_USE_ETAG": "true",
+        "IMGPROXY_AUTO_WEBP": "true",
+        "IMGPROXY_MAX_SRC_RESOLUTION": "16.8",
+        "IMGPROXY_USE_S3": "true",
+        "IMGPROXY_S3_ENDPOINT": "${{supabase-storage.ENDPOINT}}",
+        "IMGPROXY_S3_REGION": "${{supabase-storage.REGION}}",
+        "AWS_ACCESS_KEY_ID": "${{supabase-storage.ACCESS_KEY_ID}}",
+        "AWS_SECRET_ACCESS_KEY": "${{supabase-storage.SECRET_ACCESS_KEY}}"
+      },
+      "restartPolicy": "ALWAYS"
+    },
+    "meta": {
+      "image": "supabase/postgres-meta:v0.96.6",
+      "variables": {
+        "PORT": "8080",
+        "PG_META_PORT": "8080",
+        "PG_META_DB_HOST": "${{db.RAILWAY_PRIVATE_DOMAIN}}",
+        "PG_META_DB_PORT": "5432",
+        "PG_META_DB_NAME": "postgres",
+        "PG_META_DB_USER": "postgres",
+        "PG_META_DB_PASSWORD": "${{db.POSTGRES_PASSWORD}}",
+        "CRYPTO_KEY": "${{db.PG_META_CRYPTO_KEY}}"
+      },
+      "healthcheckPath": "/health",
+      "restartPolicy": "ALWAYS"
+    },
+    "functions": {
+      "image": "ghcr.io/hmseeb/supabase-railway-functions:v0.8.0-r1",
+      "variables": {
+        "PORT": "9000",
+        "JWT_SECRET": "${{db.JWT_SECRET}}",
+        "SUPABASE_URL": "http://${{gateway.RAILWAY_PRIVATE_DOMAIN}}:8000",
+        "SUPABASE_PUBLIC_URL": "https://${{gateway.RAILWAY_PUBLIC_DOMAIN}}",
+        "SUPABASE_ANON_KEY": "${{db.ANON_KEY}}",
+        "SUPABASE_SERVICE_ROLE_KEY": "${{db.SERVICE_ROLE_KEY}}",
+        "SUPABASE_PUBLISHABLE_KEYS": "{\"default\":\"\"}",
+        "SUPABASE_SECRET_KEYS": "{\"default\":\"\"}",
+        "SUPABASE_DB_URL": "postgresql://postgres:${{db.POSTGRES_PASSWORD}}@${{db.RAILWAY_PRIVATE_DOMAIN}}:5432/postgres",
+        "VERIFY_JWT": "false"
+      },
+      "healthcheckPath": "/hello",
+      "restartPolicy": "ALWAYS",
+      "$note": "The image contains upstream's dispatcher and hello function. Fork the adapter, add function directories, and redeploy Functions plus Studio to add code."
+    },
+    "studio": {
+      "image": "ghcr.io/hmseeb/supabase-railway-studio:v0.8.0-r1",
+      "variables": {
+        "PORT": "3000",
+        "HOSTNAME": "0.0.0.0",
+        "STUDIO_PG_META_URL": "http://${{meta.RAILWAY_PRIVATE_DOMAIN}}:8080",
+        "POSTGRES_PORT": "5432",
+        "POSTGRES_HOST": "${{db.RAILWAY_PRIVATE_DOMAIN}}",
+        "POSTGRES_DB": "postgres",
+        "POSTGRES_PASSWORD": "${{db.POSTGRES_PASSWORD}}",
+        "POSTGRES_USER_READ_WRITE": "postgres",
+        "PG_META_CRYPTO_KEY": "${{db.PG_META_CRYPTO_KEY}}",
+        "PGRST_DB_SCHEMAS": "public,graphql_public",
+        "PGRST_DB_MAX_ROWS": "1000",
+        "PGRST_DB_EXTRA_SEARCH_PATH": "public",
+        "DEFAULT_ORGANIZATION_NAME": "Default Organization",
+        "DEFAULT_PROJECT_NAME": "Default Project",
+        "SUPABASE_URL": "http://${{gateway.RAILWAY_PRIVATE_DOMAIN}}:8000",
+        "SUPABASE_PUBLIC_URL": "https://${{gateway.RAILWAY_PUBLIC_DOMAIN}}",
+        "SUPABASE_ANON_KEY": "${{db.ANON_KEY}}",
+        "SUPABASE_SERVICE_KEY": "${{db.SERVICE_ROLE_KEY}}",
+        "AUTH_JWT_SECRET": "${{db.JWT_SECRET}}",
+        "SUPABASE_PUBLISHABLE_KEY": "",
+        "SUPABASE_SECRET_KEY": "",
+        "ENABLED_FEATURES_LOGS_ALL": "false",
+        "SNIPPETS_MANAGEMENT_FOLDER": "/app/snippets",
+        "EDGE_FUNCTIONS_MANAGEMENT_FOLDER": "/app/edge-functions"
+      },
+      "healthcheckPath": "/api/platform/profile",
+      "restartPolicy": "ALWAYS",
+      "$note": "Studio is private behind the gateway's Basic Auth. Its wrapper derives API keys and contains the same read-only Functions tree as Edge Runtime."
+    },
+    "pooler": {
+      "image": "ghcr.io/hmseeb/supabase-railway-pooler:v0.8.0-r1",
+      "variables": {
+        "PORT": "4000",
+        "POSTGRES_PORT": "5432",
+        "POSTGRES_HOST": "${{db.RAILWAY_PRIVATE_DOMAIN}}",
+        "POSTGRES_DB": "postgres",
+        "POSTGRES_PASSWORD": "${{db.POSTGRES_PASSWORD}}",
+        "DATABASE_URL": "ecto://supabase_admin:${{db.POSTGRES_PASSWORD}}@${{db.RAILWAY_PRIVATE_DOMAIN}}:5432/_supabase",
+        "CLUSTER_POSTGRES": "true",
+        "SECRET_KEY_BASE": "${{db.SECRET_KEY_BASE}}",
+        "VAULT_ENC_KEY": "${{db.VAULT_ENC_KEY}}",
+        "API_JWT_SECRET": "${{db.JWT_SECRET}}",
+        "METRICS_JWT_SECRET": "${{db.JWT_SECRET}}",
+        "REGION": "local",
+        "ERL_AFLAGS": "-proto_dist inet_tcp",
+        "POOLER_TENANT_ID": "railway",
+        "POOLER_DEFAULT_POOL_SIZE": "20",
+        "POOLER_MAX_CLIENT_CONN": "100",
+        "POOLER_POOL_MODE": "transaction",
+        "DB_POOL_SIZE": "5"
+      },
+      "tcpProxyPort": 6543,
+      "healthcheckPath": "/api/health",
+      "restartPolicy": "ALWAYS",
+      "$note": "The wrapper bakes upstream pooler.exs and applies migrations before starting Supavisor. The public TCP proxy exposes transaction pooling on port 6543."
+    }
+  },
+  "deployerPrompts": [],
+  "empiricalJourney": [
+    "Open gateway with generated DASHBOARD_USERNAME and DASHBOARD_PASSWORD",
+    "Create a table and row in Studio, then read it through REST",
+    "Sign up and sign in through Auth with email auto-confirm",
+    "Create a Storage bucket, upload a file, read it back, and request an image transform",
+    "Invoke /functions/v1/hello and verify Realtime receives a database change",
+    "Connect through both direct Postgres and Supavisor TCP proxies"
+  ],
+  "deliberatelyOmitted": {
+    "Logflare and Vector": "Optional upstream override. Vector requires the Docker socket and is incompatible with Railway. Railway service logs remain available.",
+    "asymmetric and opaque API keys": "The stable v0.8.0 compose defaults to legacy HS256 keys. Empty override variables keep the documented migration path without forcing six generated values to stay synchronized.",
+    "live Studio function editing": "Studio and Edge Runtime cannot share a Railway volume. Function code is immutable and changed through the adapter repository."
+  }
+}
