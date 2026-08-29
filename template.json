@@ -11,15 +11,15 @@
   },
   "adapter": {
     "repo": "https://github.com/hmseeb/supabase-edge-functions-railway",
-    "tag": "v0.8.0-r2",
+    "tag": "v0.8.0-r3",
     "$note": "Six thin owned images package files that Docker Compose bind-mounts but Railway image services cannot. Auth, REST, Realtime, imgproxy, and postgres-meta stay on the exact upstream images.",
     "images": {
-      "db": "ghcr.io/hmseeb/supabase-railway-db:v0.8.0-r2",
-      "gateway": "ghcr.io/hmseeb/supabase-railway-gateway:v0.8.0-r2",
-      "functions": "ghcr.io/hmseeb/supabase-railway-functions:v0.8.0-r2",
-      "pooler": "ghcr.io/hmseeb/supabase-railway-pooler:v0.8.0-r2",
-      "storage": "ghcr.io/hmseeb/supabase-railway-storage:v0.8.0-r2",
-      "studio": "ghcr.io/hmseeb/supabase-railway-studio:v0.8.0-r2"
+      "db": "ghcr.io/hmseeb/supabase-railway-db:v0.8.0-r3",
+      "gateway": "ghcr.io/hmseeb/supabase-railway-gateway:v0.8.0-r3",
+      "functions": "ghcr.io/hmseeb/supabase-railway-functions:v0.8.0-r3",
+      "pooler": "ghcr.io/hmseeb/supabase-railway-pooler:v0.8.0-r3",
+      "storage": "ghcr.io/hmseeb/supabase-railway-storage:v0.8.0-r3",
+      "studio": "ghcr.io/hmseeb/supabase-railway-studio:v0.8.0-r3"
     }
   },
   "topology": {
@@ -27,11 +27,12 @@
     "$storage": "Storage writes to its own Railway volume. imgproxy is omitted because Supabase's file backend hands imgproxy local:// paths, so both processes need one shared filesystem, and a Railway volume cannot attach to two services. Railway's API also cannot provision a bucket instance: bucketCreate returns a project-level bucket whose environment instance never exists, so every bucket reference resolves empty. Verified twice on 2026-08-29 with bucketInstanceDetails and bucketS3Credentials both returning BucketInstance not found.",
     "$functions": "The same pinned Functions tree is baked into Studio and Edge Runtime. Updating a function requires changing the adapter repository and redeploying both images because Railway cannot share a writable Functions volume.",
     "$public_edge": "Only gateway receives an HTTP domain. Studio is protected by generated HTTP Basic Auth on that same origin, and all API paths route through Envoy.",
+    "$ipv6": "Railway's private network carries traffic over IPv6, so every service Envoy dials must listen on a v6 socket. Upstream's Docker defaults bind IPv4 only and produce an Envoy 'remote connection failure' while the container itself looks perfectly healthy. Hence GOTRUE_API_HOST, SERVER_HOST, PG_META_HOST and HOSTNAME are :: and PGRST_SERVER_HOST is *. Diagnosed on 2026-08-29 when Studio passed its own healthcheck but every gateway request returned 503.",
     "$secrets": "JWT_SECRET is generated once on db. Gateway, Storage, Studio, and Edge Runtime independently derive byte-identical legacy anon and service-role JWTs from fixed claims."
   },
   "services": {
     "db": {
-      "image": "ghcr.io/hmseeb/supabase-railway-db:v0.8.0-r2",
+      "image": "ghcr.io/hmseeb/supabase-railway-db:v0.8.0-r3",
       "variables": {
         "PGDATA": "/var/lib/postgresql/data/pgdata",
         "PGPORT": "5432",
@@ -63,7 +64,7 @@
       "$note": "The wrapper removes lost+found, initializes PGDATA in a subdirectory, bakes the seven official SQL files, and persists /etc/postgresql-custom inside the one attached volume. Empty ANON_KEY and SERVICE_ROLE_KEY are optional migration overrides; wrappers derive both when blank."
     },
     "gateway": {
-      "image": "ghcr.io/hmseeb/supabase-railway-gateway:v0.8.0-r2",
+      "image": "ghcr.io/hmseeb/supabase-railway-gateway:v0.8.0-r3",
       "variables": {
         "PORT": "8000",
         "JWT_SECRET": "${{db.JWT_SECRET}}",
@@ -129,6 +130,7 @@
       "variables": {
         "PORT": "3000",
         "PGRST_SERVER_PORT": "3000",
+        "PGRST_SERVER_HOST": "*",
         "PGRST_DB_URI": "postgres://authenticator:${{db.POSTGRES_PASSWORD}}@${{db.RAILWAY_PRIVATE_DOMAIN}}:5432/postgres",
         "PGRST_DB_SCHEMAS": "public,graphql_public",
         "PGRST_DB_MAX_ROWS": "1000",
@@ -170,7 +172,7 @@
       "$note": "The service name must remain realtime-dev. The upstream tenant is seeded with that identifier and Realtime routing depends on it."
     },
     "storage": {
-      "image": "ghcr.io/hmseeb/supabase-railway-storage:v0.8.0-r2",
+      "image": "ghcr.io/hmseeb/supabase-railway-storage:v0.8.0-r3",
       "variables": {
         "PORT": "5000",
         "SERVER_PORT": "5000",
@@ -204,6 +206,7 @@
       "image": "supabase/postgres-meta:v0.96.6",
       "variables": {
         "PORT": "8080",
+        "PG_META_HOST": "::",
         "PG_META_PORT": "8080",
         "PG_META_DB_HOST": "${{db.RAILWAY_PRIVATE_DOMAIN}}",
         "PG_META_DB_PORT": "5432",
@@ -216,7 +219,7 @@
       "restartPolicy": "ALWAYS"
     },
     "functions": {
-      "image": "ghcr.io/hmseeb/supabase-railway-functions:v0.8.0-r2",
+      "image": "ghcr.io/hmseeb/supabase-railway-functions:v0.8.0-r3",
       "variables": {
         "PORT": "9000",
         "JWT_SECRET": "${{db.JWT_SECRET}}",
@@ -234,10 +237,10 @@
       "$note": "The image contains upstream's dispatcher and hello function. Fork the adapter, add function directories, and redeploy Functions plus Studio to add code."
     },
     "studio": {
-      "image": "ghcr.io/hmseeb/supabase-railway-studio:v0.8.0-r2",
+      "image": "ghcr.io/hmseeb/supabase-railway-studio:v0.8.0-r3",
       "variables": {
         "PORT": "3000",
-        "HOSTNAME": "0.0.0.0",
+        "HOSTNAME": "::",
         "STUDIO_PG_META_URL": "http://${{meta.RAILWAY_PRIVATE_DOMAIN}}:8080",
         "POSTGRES_PORT": "5432",
         "POSTGRES_HOST": "${{db.RAILWAY_PRIVATE_DOMAIN}}",
@@ -267,7 +270,7 @@
       "$note": "Studio is private behind the gateway's Basic Auth. Its wrapper derives API keys and contains the same read-only Functions tree as Edge Runtime. JWT_SECRET is required by the wrapper's key derivation; upstream Studio itself reads AUTH_JWT_SECRET, so both are set to the same value."
     },
     "pooler": {
-      "image": "ghcr.io/hmseeb/supabase-railway-pooler:v0.8.0-r2",
+      "image": "ghcr.io/hmseeb/supabase-railway-pooler:v0.8.0-r3",
       "variables": {
         "PORT": "4000",
         "POSTGRES_PORT": "5432",

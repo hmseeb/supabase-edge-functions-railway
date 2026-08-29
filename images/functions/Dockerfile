@@ -18,4 +18,4 @@ RUN chmod +x /usr/local/bin/derive-keys.sh /usr/local/bin/railway-entrypoint.sh
 # nosemgrep: dockerfile.security.missing-user-entrypoint.missing-user-entrypoint
 ENTRYPOINT ["/usr/local/bin/railway-entrypoint.sh"]
 # nosemgrep: dockerfile.security.missing-user.missing-user
-CMD ["start", "--main-service", "/home/deno/functions/main", "-p", "9000"]
+CMD ["start", "--main-service", "/home/deno/functions/main", "-p", "9000", "--ip", "::"]

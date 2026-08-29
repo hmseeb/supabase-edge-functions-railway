@@ -7,5 +7,6 @@ ROOT=$(cd "$(dirname "$0")/.." && pwd)
 "$ROOT/test/upstream-assets.sh"
 "$ROOT/test/gateway-networking.py"
 "$ROOT/test/gateway-health.py"
+"$ROOT/test/functions-bind.py"
 "$ROOT/test/template-contract.py"
 "$ROOT/test/image-contract.sh"

@@ -19,7 +19,16 @@ assert services["db"]["volume"]["mountPath"] == "/var/lib/postgresql/data"
 assert services["storage"]["volume"]["mountPath"] == "/var/lib/storage"
 assert services["storage"]["variables"]["STORAGE_BACKEND"] == "file"
 assert services["storage"]["variables"]["FILE_STORAGE_BACKEND_PATH"] == "/var/lib/storage"
-assert services["auth"]["variables"]["GOTRUE_API_HOST"] == "::"
+ipv6_binds = {
+    "auth": ("GOTRUE_API_HOST", "::"),
+    "storage": ("SERVER_HOST", "::"),
+    "meta": ("PG_META_HOST", "::"),
+    "studio": ("HOSTNAME", "::"),
+    "rest": ("PGRST_SERVER_HOST", "*"),
+}
+for name, (key, value) in ipv6_binds.items():
+    actual = services[name]["variables"].get(key)
+    assert actual == value, f"{name}.{key} is {actual!r}; Railway private networking is IPv6"
 assert "healthcheckPath" not in services["auth"], "Auth migrations outrun Railway's healthcheck window"
 assert all("latest" not in service["image"] for service in services.values())
 for name in ("gateway", "storage", "studio", "functions"):
