@@ -11,15 +11,15 @@
   },
   "adapter": {
     "repo": "https://github.com/hmseeb/supabase-edge-functions-railway",
-    "tag": "v0.8.0-r1",
+    "tag": "v0.8.0-r2",
     "$note": "Six thin owned images package files that Docker Compose bind-mounts but Railway image services cannot. Auth, REST, Realtime, imgproxy, and postgres-meta stay on the exact upstream images.",
     "images": {
-      "db": "ghcr.io/hmseeb/supabase-railway-db:v0.8.0-r1",
-      "gateway": "ghcr.io/hmseeb/supabase-railway-gateway:v0.8.0-r1",
-      "functions": "ghcr.io/hmseeb/supabase-railway-functions:v0.8.0-r1",
-      "pooler": "ghcr.io/hmseeb/supabase-railway-pooler:v0.8.0-r1",
-      "storage": "ghcr.io/hmseeb/supabase-railway-storage:v0.8.0-r1",
-      "studio": "ghcr.io/hmseeb/supabase-railway-studio:v0.8.0-r1"
+      "db": "ghcr.io/hmseeb/supabase-railway-db:v0.8.0-r2",
+      "gateway": "ghcr.io/hmseeb/supabase-railway-gateway:v0.8.0-r2",
+      "functions": "ghcr.io/hmseeb/supabase-railway-functions:v0.8.0-r2",
+      "pooler": "ghcr.io/hmseeb/supabase-railway-pooler:v0.8.0-r2",
+      "storage": "ghcr.io/hmseeb/supabase-railway-storage:v0.8.0-r2",
+      "studio": "ghcr.io/hmseeb/supabase-railway-studio:v0.8.0-r2"
     }
   },
   "topology": {
@@ -35,7 +35,7 @@
   },
   "services": {
     "db": {
-      "image": "ghcr.io/hmseeb/supabase-railway-db:v0.8.0-r1",
+      "image": "ghcr.io/hmseeb/supabase-railway-db:v0.8.0-r2",
       "variables": {
         "PGDATA": "/var/lib/postgresql/data/pgdata",
         "PGPORT": "5432",
@@ -67,7 +67,7 @@
       "$note": "The wrapper removes lost+found, initializes PGDATA in a subdirectory, bakes the seven official SQL files, and persists /etc/postgresql-custom inside the one attached volume. Empty ANON_KEY and SERVICE_ROLE_KEY are optional migration overrides; wrappers derive both when blank."
     },
     "gateway": {
-      "image": "ghcr.io/hmseeb/supabase-railway-gateway:v0.8.0-r1",
+      "image": "ghcr.io/hmseeb/supabase-railway-gateway:v0.8.0-r2",
       "variables": {
         "PORT": "8000",
         "JWT_SECRET": "${{db.JWT_SECRET}}",
@@ -173,7 +173,7 @@
       "$note": "The service name must remain realtime-dev. The upstream tenant is seeded with that identifier and Realtime routing depends on it."
     },
     "storage": {
-      "image": "ghcr.io/hmseeb/supabase-railway-storage:v0.8.0-r1",
+      "image": "ghcr.io/hmseeb/supabase-railway-storage:v0.8.0-r2",
       "variables": {
         "PORT": "5000",
         "SERVER_PORT": "5000",
@@ -237,7 +237,7 @@
       "restartPolicy": "ALWAYS"
     },
     "functions": {
-      "image": "ghcr.io/hmseeb/supabase-railway-functions:v0.8.0-r1",
+      "image": "ghcr.io/hmseeb/supabase-railway-functions:v0.8.0-r2",
       "variables": {
         "PORT": "9000",
         "JWT_SECRET": "${{db.JWT_SECRET}}",
@@ -255,7 +255,7 @@
       "$note": "The image contains upstream's dispatcher and hello function. Fork the adapter, add function directories, and redeploy Functions plus Studio to add code."
     },
     "studio": {
-      "image": "ghcr.io/hmseeb/supabase-railway-studio:v0.8.0-r1",
+      "image": "ghcr.io/hmseeb/supabase-railway-studio:v0.8.0-r2",
       "variables": {
         "PORT": "3000",
         "HOSTNAME": "0.0.0.0",
@@ -287,7 +287,7 @@
       "$note": "Studio is private behind the gateway's Basic Auth. Its wrapper derives API keys and contains the same read-only Functions tree as Edge Runtime."
     },
     "pooler": {
-      "image": "ghcr.io/hmseeb/supabase-railway-pooler:v0.8.0-r1",
+      "image": "ghcr.io/hmseeb/supabase-railway-pooler:v0.8.0-r2",
       "variables": {
         "PORT": "4000",
         "POSTGRES_PORT": "5432",

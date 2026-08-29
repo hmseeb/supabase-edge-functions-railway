@@ -30,7 +30,10 @@ for script in \
   images/db/entrypoint.sh \
   images/gateway/entrypoint.sh \
   images/gateway/upstream-entrypoint.sh \
-  images/pooler/entrypoint.sh
+  images/functions/entrypoint.sh \
+  images/pooler/entrypoint.sh \
+  images/storage/entrypoint.sh \
+  images/studio/entrypoint.sh
 do
   shellcheck "$ROOT/$script"
 done
