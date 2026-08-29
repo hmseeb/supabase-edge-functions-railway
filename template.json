@@ -27,7 +27,7 @@
     "$storage": "Storage writes to its own Railway volume. imgproxy is omitted because Supabase's file backend hands imgproxy local:// paths, so both processes need one shared filesystem, and a Railway volume cannot attach to two services. Railway's API also cannot provision a bucket instance: bucketCreate returns a project-level bucket whose environment instance never exists, so every bucket reference resolves empty. Verified twice on 2026-08-29 with bucketInstanceDetails and bucketS3Credentials both returning BucketInstance not found.",
     "$functions": "The same pinned Functions tree is baked into Studio and Edge Runtime. Updating a function requires changing the adapter repository and redeploying both images because Railway cannot share a writable Functions volume.",
     "$public_edge": "Only gateway receives an HTTP domain. Studio is protected by generated HTTP Basic Auth on that same origin, and all API paths route through Envoy.",
-    "$ipv6": "Railway's private network carries traffic over IPv6, so every service Envoy dials must listen on a v6 socket. Upstream's Docker defaults bind IPv4 only and produce an Envoy 'remote connection failure' while the container itself looks perfectly healthy. Hence GOTRUE_API_HOST, SERVER_HOST, PG_META_HOST and HOSTNAME are :: and PGRST_SERVER_HOST is *. Diagnosed on 2026-08-29 when Studio passed its own healthcheck but every gateway request returned 503.",
+    "$ipv6": "Railway's private network carries traffic over IPv6, so every service Envoy dials must listen on a v6 socket. Upstream's Docker defaults bind IPv4 only and produce an Envoy 'remote connection failure' while the container itself looks perfectly healthy. Hence GOTRUE_API_HOST, SERVER_HOST, PG_META_HOST and HOSTNAME are ::, Edge Runtime starts with --ip ::, and PGRST_SERVER_HOST is *6. PostgREST's * still logged 'listening on 0.0.0.0' and stayed unreachable; only *6 produced '[::]:3000'. Diagnosed on 2026-08-29 when Studio passed its own healthcheck but every gateway request returned 503.",
     "$secrets": "JWT_SECRET is generated once on db. Gateway, Storage, Studio, and Edge Runtime independently derive byte-identical legacy anon and service-role JWTs from fixed claims."
   },
   "services": {
@@ -130,7 +130,7 @@
       "variables": {
         "PORT": "3000",
         "PGRST_SERVER_PORT": "3000",
-        "PGRST_SERVER_HOST": "*",
+        "PGRST_SERVER_HOST": "*6",
         "PGRST_DB_URI": "postgres://authenticator:${{db.POSTGRES_PASSWORD}}@${{db.RAILWAY_PRIVATE_DOMAIN}}:5432/postgres",
         "PGRST_DB_SCHEMAS": "public,graphql_public",
         "PGRST_DB_MAX_ROWS": "1000",

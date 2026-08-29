@@ -24,7 +24,7 @@ ipv6_binds = {
     "storage": ("SERVER_HOST", "::"),
     "meta": ("PG_META_HOST", "::"),
     "studio": ("HOSTNAME", "::"),
-    "rest": ("PGRST_SERVER_HOST", "*"),
+    "rest": ("PGRST_SERVER_HOST", "*6"),
 }
 for name, (key, value) in ipv6_binds.items():
     actual = services[name]["variables"].get(key)
