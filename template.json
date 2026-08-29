@@ -23,15 +23,11 @@
     }
   },
   "topology": {
-    "$note": "The official 11-service stack is retained, excluding only the optional Logflare and Vector override. Vector needs a Docker socket, which Railway does not expose. Railway logs replace the optional Log Explorer.",
-    "$storage": "Storage uses a bundled Railway S3 bucket so Storage and imgproxy do not need a shared local volume. References use the bucket name, never its UUID.",
+    "$note": "Ten of the official services are retained. The optional Logflare and Vector override is excluded because Vector needs a Docker socket, which Railway does not expose. Railway logs replace the optional Log Explorer.",
+    "$storage": "Storage writes to its own Railway volume. imgproxy is omitted because Supabase's file backend hands imgproxy local:// paths, so both processes need one shared filesystem, and a Railway volume cannot attach to two services. Railway's API also cannot provision a bucket instance: bucketCreate returns a project-level bucket whose environment instance never exists, so every bucket reference resolves empty. Verified twice on 2026-08-29 with bucketInstanceDetails and bucketS3Credentials both returning BucketInstance not found.",
     "$functions": "The same pinned Functions tree is baked into Studio and Edge Runtime. Updating a function requires changing the adapter repository and redeploying both images because Railway cannot share a writable Functions volume.",
     "$public_edge": "Only gateway receives an HTTP domain. Studio is protected by generated HTTP Basic Auth on that same origin, and all API paths route through Envoy.",
     "$secrets": "JWT_SECRET is generated once on db. Gateway, Storage, Studio, and Edge Runtime independently derive byte-identical legacy anon and service-role JWTs from fixed claims."
-  },
-  "bucket": {
-    "name": "supabase-storage",
-    "$note": "All references must remain name-based: ${{supabase-storage.BUCKET}}, ${{supabase-storage.ACCESS_KEY_ID}}, ${{supabase-storage.SECRET_ACCESS_KEY}}, ${{supabase-storage.ENDPOINT}}, and ${{supabase-storage.REGION}}."
   },
   "services": {
     "db": {
@@ -92,7 +88,7 @@
       "image": "supabase/gotrue:v2.189.0",
       "variables": {
         "PORT": "9999",
-        "GOTRUE_API_HOST": "0.0.0.0",
+        "GOTRUE_API_HOST": "::",
         "GOTRUE_API_PORT": "9999",
         "API_EXTERNAL_URL": "https://${{gateway.RAILWAY_PUBLIC_DOMAIN}}/auth/v1",
         "GOTRUE_DB_DRIVER": "postgres",
@@ -124,7 +120,8 @@
       },
       "healthcheckPath": "/health",
       "restartPolicy": "ALWAYS",
-      "$note": "Email auto-confirm is on so a fresh deploy has a complete signup journey without a fake SMTP server. The listing tells production deployers to configure SMTP and turn auto-confirm off."
+      "$note": "Email auto-confirm is on so a fresh deploy has a complete signup journey without a fake SMTP server. The listing tells production deployers to configure SMTP and turn auto-confirm off.",
+      "$note_bind": "GOTRUE_API_HOST is :: rather than upstream's 0.0.0.0. Railway's private network resolves IPv6 first, and a Go listener on :: accepts both families, so the platform healthcheck and the gateway both reach it."
     },
     "rest": {
       "image": "postgrest/postgrest:v14.12",
@@ -187,39 +184,21 @@
         "STORAGE_PUBLIC_URL": "https://${{gateway.RAILWAY_PUBLIC_DOMAIN}}",
         "REQUEST_ALLOW_X_FORWARDED_PATH": "true",
         "FILE_SIZE_LIMIT": "52428800",
-        "STORAGE_BACKEND": "s3",
-        "GLOBAL_S3_BUCKET": "${{supabase-storage.BUCKET}}",
-        "GLOBAL_S3_ENDPOINT": "${{supabase-storage.ENDPOINT}}",
-        "GLOBAL_S3_PROTOCOL": "https",
-        "GLOBAL_S3_FORCE_PATH_STYLE": "true",
-        "AWS_ACCESS_KEY_ID": "${{supabase-storage.ACCESS_KEY_ID}}",
-        "AWS_SECRET_ACCESS_KEY": "${{supabase-storage.SECRET_ACCESS_KEY}}",
-        "TENANT_ID": "railway",
-        "REGION": "${{supabase-storage.REGION}}",
-        "ENABLE_IMAGE_TRANSFORMATION": "true",
-        "IMGPROXY_URL": "http://${{imgproxy.RAILWAY_PRIVATE_DOMAIN}}:5001",
+        "STORAGE_BACKEND": "file",
+        "FILE_STORAGE_BACKEND_PATH": "/var/lib/storage",
+        "GLOBAL_S3_BUCKET": "stub",
+        "TENANT_ID": "stub",
+        "REGION": "stub",
+        "ENABLE_IMAGE_TRANSFORMATION": "false",
         "S3_PROTOCOL_ACCESS_KEY_ID": "${{db.S3_PROTOCOL_ACCESS_KEY_ID}}",
         "S3_PROTOCOL_ACCESS_KEY_SECRET": "${{db.S3_PROTOCOL_ACCESS_KEY_SECRET}}"
       },
+      "volume": {
+        "mountPath": "/var/lib/storage"
+      },
       "healthcheckPath": "/status",
       "restartPolicy": "ALWAYS",
-      "$note": "The wrapper derives ANON_KEY and SERVICE_KEY when the db overrides are blank. Bucket references are name-based and survive fresh template deploys."
-    },
-    "imgproxy": {
-      "image": "darthsim/imgproxy:v3.30.1",
-      "variables": {
-        "PORT": "5001",
-        "IMGPROXY_BIND": ":5001",
-        "IMGPROXY_USE_ETAG": "true",
-        "IMGPROXY_AUTO_WEBP": "true",
-        "IMGPROXY_MAX_SRC_RESOLUTION": "16.8",
-        "IMGPROXY_USE_S3": "true",
-        "IMGPROXY_S3_ENDPOINT": "${{supabase-storage.ENDPOINT}}",
-        "IMGPROXY_S3_REGION": "${{supabase-storage.REGION}}",
-        "AWS_ACCESS_KEY_ID": "${{supabase-storage.ACCESS_KEY_ID}}",
-        "AWS_SECRET_ACCESS_KEY": "${{supabase-storage.SECRET_ACCESS_KEY}}"
-      },
-      "restartPolicy": "ALWAYS"
+      "$note": "Objects live on this service's own Railway volume. The wrapper derives ANON_KEY and SERVICE_KEY when the db overrides are blank. GLOBAL_S3_BUCKET, TENANT_ID, and REGION keep upstream's stub values because the file backend never reads them."
     },
     "meta": {
       "image": "supabase/postgres-meta:v0.96.6",
@@ -275,6 +254,7 @@
         "SUPABASE_PUBLIC_URL": "https://${{gateway.RAILWAY_PUBLIC_DOMAIN}}",
         "SUPABASE_ANON_KEY": "${{db.ANON_KEY}}",
         "SUPABASE_SERVICE_KEY": "${{db.SERVICE_ROLE_KEY}}",
+        "JWT_SECRET": "${{db.JWT_SECRET}}",
         "AUTH_JWT_SECRET": "${{db.JWT_SECRET}}",
         "SUPABASE_PUBLISHABLE_KEY": "",
         "SUPABASE_SECRET_KEY": "",
@@ -284,7 +264,7 @@
       },
       "healthcheckPath": "/api/platform/profile",
       "restartPolicy": "ALWAYS",
-      "$note": "Studio is private behind the gateway's Basic Auth. Its wrapper derives API keys and contains the same read-only Functions tree as Edge Runtime."
+      "$note": "Studio is private behind the gateway's Basic Auth. Its wrapper derives API keys and contains the same read-only Functions tree as Edge Runtime. JWT_SECRET is required by the wrapper's key derivation; upstream Studio itself reads AUTH_JWT_SECRET, so both are set to the same value."
     },
     "pooler": {
       "image": "ghcr.io/hmseeb/supabase-railway-pooler:v0.8.0-r2",
@@ -319,12 +299,13 @@
     "Open gateway with generated DASHBOARD_USERNAME and DASHBOARD_PASSWORD",
     "Create a table and row in Studio, then read it through REST",
     "Sign up and sign in through Auth with email auto-confirm",
-    "Create a Storage bucket, upload a file, read it back, and request an image transform",
+    "Create a Storage bucket, upload a file, and read it back",
     "Invoke /functions/v1/hello and verify Realtime receives a database change",
     "Connect through both direct Postgres and Supavisor TCP proxies"
   ],
   "deliberatelyOmitted": {
     "Logflare and Vector": "Optional upstream override. Vector requires the Docker socket and is incompatible with Railway. Railway service logs remain available.",
+    "imgproxy and image transformation": "The Storage file backend passes imgproxy local:// paths, so the two processes must share one filesystem. A Railway volume attaches to exactly one service, and the Railway API cannot provision the S3 bucket that would remove the shared-filesystem requirement. Uploads, downloads, signed URLs, and the S3 protocol endpoint all work; only resizing is unavailable. Deployers who need transforms can point Storage at an external S3 provider and add an imgproxy service.",
     "asymmetric and opaque API keys": "The stable v0.8.0 compose defaults to legacy HS256 keys. Empty override variables keep the documented migration path without forcing six generated values to stay synchronized.",
     "live Studio function editing": "Studio and Edge Runtime cannot share a Railway volume. Function code is immutable and changed through the adapter repository."
   }

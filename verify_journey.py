@@ -220,14 +220,6 @@ def main() -> None:
     )
     if downloaded != PIXEL:
         raise RuntimeError("Storage read did not match uploaded bytes")
-    require(
-        "Storage image transform",
-        request(
-            origin,
-            f"/storage/v1/render/image/public/{bucket_name}/pixel.png?width=1&height=1",
-        ),
-        {200},
-    )
 
     realtime_env = {
         **os.environ,
@@ -251,7 +243,6 @@ def main() -> None:
             "postgres-meta SQL",
             "REST write and read",
             "Storage upload and read",
-            "Storage image transformation",
             "Edge Function invocation",
             "Realtime database insert event",
         ],

@@ -44,7 +44,7 @@ def variable(service: str, key: str, default: str) -> dict[str, Any]:
 
 def fresh_config(config: dict[str, Any]) -> dict[str, Any]:
     service_ids = {old: str(uuid.uuid4()) for old in config["services"]}
-    rebuilt: dict[str, Any] = {"services": {}, "buckets": {}}
+    rebuilt: dict[str, Any] = {"services": {}}
     for old_id, service in config["services"].items():
         copied = json.loads(json.dumps(service))
         if copied.get("volumeMounts"):
@@ -53,8 +53,6 @@ def fresh_config(config: dict[str, Any]) -> dict[str, Any]:
                 for volume_id, mount in copied["volumeMounts"].items()
             }
         rebuilt["services"][service_ids[old_id]] = copied
-    for bucket in config.get("buckets", {}).values():
-        rebuilt["buckets"][str(uuid.uuid4())] = json.loads(json.dumps(bucket))
     return rebuilt
 
 
@@ -88,10 +86,6 @@ def main() -> None:
             service.setdefault("networking", {})["tcpProxies"] = {"5432": {}}
         if name == "pooler":
             service.setdefault("networking", {})["tcpProxies"] = {"6543": {}}
-
-    buckets = list(config.get("buckets", {}).values())
-    if len(buckets) != 1 or buckets[0].get("name") != sheet["bucket"]["name"]:
-        raise RuntimeError(f"unexpected generated buckets: {buckets}")
 
     template_id = str(uuid.uuid4())
     saved = rw.gql(
@@ -135,15 +129,15 @@ def main() -> None:
     for reference in re.findall(r"\$\{\{[^}]+}}", blob):
         if re.search(r"[0-9a-f]{8}-[0-9a-f]{4}-", reference):
             problems.append(f"UUID-keyed reference: {reference}")
-    for required in (
-        "${{supabase-storage.BUCKET}}",
-        "${{supabase-storage.ACCESS_KEY_ID}}",
-        "${{supabase-storage.SECRET_ACCESS_KEY}}",
-        "${{supabase-storage.ENDPOINT}}",
-        "${{supabase-storage.REGION}}",
-    ):
-        if required not in blob:
-            problems.append(f"missing name-based bucket reference {required}")
+    for name, expected in sheet["services"].items():
+        service = returned.get(name, {})
+        mounts = [
+            mount.get("mountPath")
+            for mount in (service.get("volumeMounts") or {}).values()
+        ]
+        wanted = expected.get("volume", {}).get("mountPath")
+        if wanted and wanted not in mounts:
+            problems.append(f"{name} lost its {wanted} volume")
     for problem in problems:
         print(f"MISMATCH {problem}")
     if problems:

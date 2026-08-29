@@ -60,7 +60,6 @@ def derive_api_key(jwt_secret: str, role: str) -> str:
 class Variables:
     def __init__(self, sheet: dict[str, Any]) -> None:
         self.services = sheet["services"]
-        self.bucket = sheet["bucket"]["name"]
         self.origin = PLACEHOLDER_ORIGIN
         self.cache: dict[tuple[str, str], str] = {}
 
@@ -83,8 +82,6 @@ class Variables:
                     raise ValueError(f"invalid generator: {reference}")
                 return random_value(int(generator.group(1)), generator.group(2))
             namespace, separator, attribute = reference.partition(".")
-            if namespace == self.bucket:
-                return match.group(0)
             if not separator:
                 raise ValueError(f"unqualified reference: {reference}")
             if attribute == "RAILWAY_PRIVATE_DOMAIN":
@@ -173,21 +170,21 @@ def main() -> None:
     )
     print(f"project: {project_id}")
 
-    bucket = gql(
-        """mutation($input: BucketCreateInput!) {
-             bucketCreate(input: $input) { id name }
-           }""",
-        {
-            "input": {
-                "projectId": project_id,
-                "environmentId": environment_id,
-                "name": sheet["bucket"]["name"],
-            }
-        },
-    )["bucketCreate"]
-    print(f"bucket: {bucket['name']} ({bucket['id']})")
-
     services: dict[str, str] = {}
+
+    def attach_volume(service_id: str, mount_path: str) -> None:
+        gql(
+            """mutation($input: VolumeCreateInput!) { volumeCreate(input: $input) { id } }""",
+            {
+                "input": {
+                    "projectId": project_id,
+                    "environmentId": environment_id,
+                    "serviceId": service_id,
+                    "mountPath": mount_path,
+                }
+            },
+        )
+
     db_spec = sheet["services"]["db"]
     services["db"] = create_service(
         project_id,
@@ -196,17 +193,7 @@ def main() -> None:
         db_spec["image"],
         values.for_service("db"),
     )
-    gql(
-        """mutation($input: VolumeCreateInput!) { volumeCreate(input: $input) { id } }""",
-        {
-            "input": {
-                "projectId": project_id,
-                "environmentId": environment_id,
-                "serviceId": services["db"],
-                "mountPath": db_spec["volume"]["mountPath"],
-            }
-        },
-    )
+    attach_volume(services["db"], db_spec["volume"]["mountPath"])
 
     gateway_spec = sheet["services"]["gateway"]
     services["gateway"] = create_service(
@@ -259,6 +246,8 @@ def main() -> None:
             start=spec.get("startCommand"),
             healthcheck=spec.get("healthcheckPath"),
         )
+        if spec.get("volume"):
+            attach_volume(services[name], spec["volume"]["mountPath"])
 
     for service_id in services.values():
         gql(
@@ -272,7 +261,6 @@ def main() -> None:
         "projectId": project_id,
         "environmentId": environment_id,
         "origin": origin,
-        "bucket": bucket,
         "services": services,
     }
     STATE.parent.mkdir(exist_ok=True)

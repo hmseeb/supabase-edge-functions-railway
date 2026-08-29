@@ -11,14 +11,15 @@ A community Railway adapter for the official Supabase self-hosted Docker snapsho
 | auth | Email and OAuth authentication | Postgres |
 | rest | PostgREST API | Postgres |
 | realtime-dev | Database change subscriptions | Postgres |
-| storage | Storage API | Railway S3 bucket |
-| imgproxy | Image transformations | Railway S3 bucket |
+| storage | Storage API | Railway volume |
 | meta | Database metadata for Studio | Postgres |
 | functions | Supabase Edge Runtime with the hello function | immutable image |
 | studio | Supabase dashboard | none |
 | pooler | Supavisor transaction pooler | Postgres |
 
 Logflare and Vector are not included. Vector needs a Docker socket, which Railway does not expose. Railway service logs remain available.
+
+imgproxy and image transformation are not included either. See the Storage section for why.
 
 ## First deploy
 
@@ -56,7 +57,16 @@ Studio can inspect the matching function tree, but it does not live-edit the run
 
 ## Storage
 
-Storage and imgproxy use the bundled Railway S3 bucket. Every template reference is keyed by the bucket name `supabase-storage`, never by a bucket UUID. Railway buckets use public networking and do not include automatic backups. Configure an external S3-compatible provider later if those limits do not fit your workload.
+Storage keeps objects on its own Railway volume. Uploads, downloads, public and signed URLs, row-level security, and the S3 protocol endpoint all work.
+
+Image transformation (`/storage/v1/render/image/...`) is not available. Supabase's file backend hands imgproxy `local://` paths, so both processes need one shared filesystem, and a Railway volume attaches to exactly one service. Railway's public API also cannot provision the S3 bucket that would remove that requirement: `bucketCreate` returns a bucket whose environment instance never exists, so every bucket reference resolves to an empty string.
+
+To enable transformations, point Storage at an external S3-compatible provider and add an imgproxy service:
+
+1. On `storage`, set `STORAGE_BACKEND=s3`, `GLOBAL_S3_BUCKET`, `GLOBAL_S3_ENDPOINT`, `GLOBAL_S3_PROTOCOL`, `GLOBAL_S3_FORCE_PATH_STYLE=true`, `REGION`, `AWS_ACCESS_KEY_ID`, and `AWS_SECRET_ACCESS_KEY`.
+2. Add a `darthsim/imgproxy:v3.30.1` service with `IMGPROXY_BIND=:5001`, `IMGPROXY_USE_S3=true`, and the same credentials, endpoint, and region.
+3. On `storage`, set `ENABLE_IMAGE_TRANSFORMATION=true` and `IMGPROXY_URL=http://imgproxy.railway.internal:5001`.
+4. Redeploy both services. Existing objects stay on the volume; copy them to the bucket first if you need them.
 
 ## Database access
 
