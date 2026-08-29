@@ -14,6 +14,7 @@ import rw  # pyright: ignore[reportMissingImports]
 
 ROOT = pathlib.Path(__file__).parent
 WORKSPACE = "fc4796db-2c6c-4354-a564-d4a1d900af53"
+BUILD_SHEET = ROOT / "template.json"
 TEMPLATE_STATE = ROOT / ".state" / "template.json"
 SCRATCH_STATE = ROOT / ".state" / "scratch.json"
 
@@ -23,6 +24,7 @@ def gql(document: str, variables: dict[str, Any] | None = None) -> dict[str, Any
 
 
 def main() -> None:
+    expected_services = set(json.loads(BUILD_SHEET.read_text())["services"])
     template_state = json.loads(TEMPLATE_STATE.read_text())
     template = gql(
         "query($code: String!) { template(code: $code) { id serializedConfig } }",
@@ -65,12 +67,13 @@ def main() -> None:
             edge["node"]["name"]: edge["node"]["id"]
             for edge in project["services"]["edges"]
         }
-        if production and len(services) == 11:
+        if production and set(services) == expected_services:
             environment_id = production[0]
             break
         time.sleep(5)
     if not environment_id:
-        raise RuntimeError(f"template workflow did not create all services: {sorted(services)}")
+        missing = sorted(expected_services - set(services))
+        raise RuntimeError(f"template workflow never created: {missing}")
 
     domains = gql(
         """query($projectId: String!, $environmentId: String!, $serviceId: String!) {
