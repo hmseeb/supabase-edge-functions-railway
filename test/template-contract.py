@@ -20,6 +20,7 @@ assert services["storage"]["volume"]["mountPath"] == "/var/lib/storage"
 assert services["storage"]["variables"]["STORAGE_BACKEND"] == "file"
 assert services["storage"]["variables"]["FILE_STORAGE_BACKEND_PATH"] == "/var/lib/storage"
 assert services["auth"]["variables"]["GOTRUE_API_HOST"] == "::"
+assert "healthcheckPath" not in services["auth"], "Auth migrations outrun Railway's healthcheck window"
 assert all("latest" not in service["image"] for service in services.values())
 for name in ("gateway", "storage", "studio", "functions"):
     assert "JWT_SECRET" in services[name]["variables"], f"{name} needs JWT_SECRET to derive API keys"

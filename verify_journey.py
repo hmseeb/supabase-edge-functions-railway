@@ -66,17 +66,26 @@ def api_headers(key: str) -> dict[str, str]:
     return {"apikey": key, "Authorization": f"Bearer {key}"}
 
 
-def wait_ready(origin: str, username: str, password: str) -> None:
+def wait_ready(origin: str, username: str, password: str, anon: str) -> None:
     deadline = time.monotonic() + 900
     basic = base64.b64encode(f"{username}:{password}".encode()).decode()
+    pending = ""
     while time.monotonic() < deadline:
-        health = request(origin, "/healthz", timeout=10)
-        studio = request(origin, "/", headers={"Authorization": f"Basic {basic}"}, timeout=20)
-        if health[0] == 200 and studio[0] == 200:
-            print("ok: Gateway and Studio are ready")
+        checks = {
+            "gateway": request(origin, "/healthz", timeout=10)[0] == 200,
+            "studio": request(
+                origin, "/", headers={"Authorization": f"Basic {basic}"}, timeout=20
+            )[0]
+            == 200,
+            "auth": request(origin, "/auth/v1/health", headers=api_headers(anon), timeout=10)[0]
+            == 200,
+        }
+        if all(checks.values()):
+            print("ok: Gateway, Studio and Auth are ready")
             return
+        pending = ", ".join(name for name, ok in checks.items() if not ok)
         time.sleep(10)
-    raise RuntimeError("Gateway or Studio did not become ready within 15 minutes")
+    raise RuntimeError(f"not ready within 15 minutes: {pending}")
 
 
 def main() -> None:
@@ -91,7 +100,7 @@ def main() -> None:
     origin = state["origin"]
     anon = credentials["anonKey"]
     service = credentials["serviceRoleKey"]
-    wait_ready(origin, credentials["dashboardUsername"], credentials["dashboardPassword"])
+    wait_ready(origin, credentials["dashboardUsername"], credentials["dashboardPassword"], anon)
 
     function_body = require(
         "Edge Function hello",

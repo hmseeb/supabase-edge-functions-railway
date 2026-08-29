@@ -118,10 +118,10 @@
         "GOTRUE_EXTERNAL_PHONE_ENABLED": "false",
         "GOTRUE_SMS_AUTOCONFIRM": "false"
       },
-      "healthcheckPath": "/health",
       "restartPolicy": "ALWAYS",
       "$note": "Email auto-confirm is on so a fresh deploy has a complete signup journey without a fake SMTP server. The listing tells production deployers to configure SMTP and turn auto-confirm off.",
-      "$note_bind": "GOTRUE_API_HOST is :: rather than upstream's 0.0.0.0. Railway's private network resolves IPv6 first, and a Go listener on :: accepts both families, so the platform healthcheck and the gateway both reach it."
+      "$note_bind": "GOTRUE_API_HOST is :: rather than upstream's 0.0.0.0. Railway's private network resolves IPv6 first, and a Go listener on :: accepts both families.",
+      "$note_healthcheck": "Deliberately no healthcheckPath. GoTrue applies more than a hundred first-boot migrations before it listens, which overruns Railway's healthcheck window, and Railway then kills the container mid-migration and retries forever. Proven on 2026-08-29: with the healthcheck removed the same image logged 'GoTrue API started on: [::]:9999' and every migration applied. Envoy health-checks the auth cluster itself, so the gateway still refuses to route until Auth answers."
     },
     "rest": {
       "image": "postgrest/postgrest:v14.12",
