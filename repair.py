@@ -76,6 +76,9 @@ def main() -> None:
         service["icon"] = (
             "https://devicons.railway.app/i/postgresql.svg" if name == "db" else ICON
         )
+        # Pin images from the build sheet so the template never inherits a
+        # stale tag that the live source project happens to be running.
+        service["source"] = {"image": expected["image"]}
         deploy = service.setdefault("deploy", {})
         deploy["restartPolicyType"] = expected.get("restartPolicy", "ALWAYS")
         if expected.get("startCommand"):
@@ -125,6 +128,14 @@ def main() -> None:
         deploy = service.get("deploy", {})
         if expected.get("healthcheckPath") and deploy.get("healthcheckPath") != expected["healthcheckPath"]:
             problems.append(f"{name}.healthcheckPath did not persist")
+        if not expected.get("healthcheckPath") and deploy.get("healthcheckPath"):
+            problems.append(f"{name} kept an unwanted healthcheck")
+        actual_image = (service.get("source") or {}).get("image")
+        if actual_image != expected["image"]:
+            problems.append(f"{name}.image is {actual_image!r}, wanted {expected['image']!r}")
+        for port in (expected.get("tcpProxyPort"),):
+            if port and str(port) not in (service.get("networking") or {}).get("tcpProxies", {}):
+                problems.append(f"{name} lost its TCP proxy on {port}")
     blob = json.dumps(readback["serializedConfig"])
     for reference in re.findall(r"\$\{\{[^}]+}}", blob):
         if re.search(r"[0-9a-f]{8}-[0-9a-f]{4}-", reference):

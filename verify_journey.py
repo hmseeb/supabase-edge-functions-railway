@@ -172,6 +172,8 @@ def main() -> None:
         {200, 201},
     )
     time.sleep(3)
+    # Unique per run so a repeat verification cannot pass on an older row.
+    marker = f"write-read-{secrets.token_hex(8)}"
     require(
         "REST write",
         request(
@@ -179,7 +181,7 @@ def main() -> None:
             "/rest/v1/railway_template_proof",
             method="POST",
             headers={**api_headers(service), "Prefer": "return=representation"},
-            payload={"value": "write-read-proof"},
+            payload={"value": marker},
         ),
         {200, 201},
     )
@@ -187,26 +189,27 @@ def main() -> None:
         "REST read",
         request(
             origin,
-            "/rest/v1/railway_template_proof?value=eq.write-read-proof&select=value",
+            f"/rest/v1/railway_template_proof?value=eq.{marker}&select=value",
             headers=api_headers(service),
         ),
         {200},
     )
-    if json.loads(rows) != [{"value": "write-read-proof"}]:
+    if json.loads(rows) != [{"value": marker}]:
         raise RuntimeError("REST read did not return the written row")
 
     bucket_name = "journey-proof"
-    require(
-        "Storage bucket create",
-        request(
-            origin,
-            "/storage/v1/bucket",
-            method="POST",
-            headers=api_headers(service),
-            payload={"id": bucket_name, "name": bucket_name, "public": True},
-        ),
-        {200, 201, 409},
+    created = request(
+        origin,
+        "/storage/v1/bucket",
+        method="POST",
+        headers=api_headers(service),
+        payload={"id": bucket_name, "name": bucket_name, "public": True},
     )
+    # Storage reports an existing bucket as HTTP 400 carrying a 409 Duplicate body.
+    if b"Duplicate" in created[2]:
+        print("ok: Storage bucket create (already existed)")
+    else:
+        require("Storage bucket create", created, {200, 201})
     require(
         "Storage upload",
         request(
