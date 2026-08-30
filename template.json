@@ -311,5 +311,13 @@
     "imgproxy and image transformation": "The Storage file backend passes imgproxy local:// paths, so the two processes must share one filesystem. A Railway volume attaches to exactly one service, and the Railway API cannot provision the S3 bucket that would remove the shared-filesystem requirement. Uploads, downloads, signed URLs, and the S3 protocol endpoint all work; only resizing is unavailable. Deployers who need transforms can point Storage at an external S3 provider and add an imgproxy service.",
     "asymmetric and opaque API keys": "The stable v0.8.0 compose defaults to legacy HS256 keys. Empty override variables keep the documented migration path without forcing six generated values to stay synchronized.",
     "live Studio function editing": "Studio and Edge Runtime cannot share a Railway volume. Function code is immutable and changed through the adapter repository."
+  },
+  "$published": {
+    "templateId": "674917a9-be35-4b28-b5f2-a697c199f41a",
+    "code": "supabase-edge-functions",
+    "url": "https://railway.com/deploy/supabase-edge-functions",
+    "sourceProjectId": "55ef1fe1-74ad-4060-bdfb-aea26ab28b03",
+    "publishedAt": "2026-08-30",
+    "verifiedOnFreshDeploy": "d84f68ee-6df2-4743-9e4d-99694d302496"
   }
 }

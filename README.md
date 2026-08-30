@@ -1,5 +1,7 @@
 # Supabase + Edge Functions on Railway
 
+[![Deploy on Railway](https://railway.com/button.svg)](https://railway.com/deploy/supabase-edge-functions)
+
 A community Railway adapter for the official Supabase self-hosted Docker snapshot `self-hosted/v0.8.0` at commit `241bb11c0627f2981746d37033f57dbfa81d29b0`.
 
 ## What deploys
