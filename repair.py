@@ -17,7 +17,7 @@ WORKSPACE = "fc4796db-2c6c-4354-a564-d4a1d900af53"
 BUILD_SHEET = ROOT / "template.json"
 GENERATED = ROOT / ".state" / "generated.json"
 STATE = ROOT / ".state" / "template.json"
-ICON = "https://supabase.com/favicon/favicon-196x196.png"
+ICON = "https://supabase.com/dashboard/img/supabase-logo.svg"
 
 DESCRIPTIONS = {
     ("db", "POSTGRES_PASSWORD"): "Generated password shared by Supabase database roles.",

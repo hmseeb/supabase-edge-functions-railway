@@ -3,5 +3,5 @@
   "expectedSlug": "supabase-edge-functions",
   "description": "Self-hosted Supabase with Auth, Storage, Realtime, Studio and Functions",
   "category": "Storage",
-  "image": "https://supabase.com/favicon/favicon-196x196.png"
+  "image": "https://supabase.com/dashboard/img/supabase-logo.svg"
 }
