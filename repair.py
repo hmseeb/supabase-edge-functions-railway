@@ -31,6 +31,8 @@ DESCRIPTIONS = {
     ("auth", "GOTRUE_MAILER_AUTOCONFIRM"): "True for first-run testing. Set false after configuring SMTP.",
     ("auth", "GOTRUE_DISABLE_SIGNUP"): "Set true to close public registration.",
     ("storage", "FILE_SIZE_LIMIT"): "Maximum upload size in bytes. Default is 50 MB.",
+    ("studio", "DEFAULT_PROJECT_NAME"): "Project name shown in Studio. Display only, safe to change anytime.",
+    ("studio", "DEFAULT_ORGANIZATION_NAME"): "Organization name shown in Studio. Display only, safe to change anytime.",
 }
 
 
